@@ -3,7 +3,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 
-const BOT_URL = 'http://2.25.192.248:8080';
+// Use Vercel proxy API routes (avoids mixed content HTTPS→HTTP)
+const API_URL = '';
 
 interface Conversation {
   id: string;
@@ -86,7 +87,7 @@ export default function Dashboard() {
     if (!messageText.trim() || !selectedConversation) return;
     setSending(true);
     try {
-      await fetch(`${BOT_URL}/api/send/text`, {
+      await fetch(`/api/send/text`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -120,7 +121,7 @@ export default function Dashboard() {
         else if (isAudio) mediatype = 'audio';
         else if (isVideo) mediatype = 'video';
 
-        await fetch(`${BOT_URL}/api/send/media`, {
+        await fetch(`/api/send/media`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -146,13 +147,30 @@ export default function Dashboard() {
     return new Date(dateStr).toLocaleString('pt-BR');
   }
 
+  // VPS base URL for media files
+  const VPS_URL = 'http://2.25.192.248:8080';
+  
+  // Proxy WhatsApp media URLs through Vercel to avoid CORS/expiration issues
+  // /media/ paths → absolute VPS URLs; CDN URLs → Vercel proxy
+  function mediaUrl(url: string | null, type: string = 'image') {
+    if (!url) return '';
+    // data URLs pass through directly
+    if (url.startsWith('data:')) return url;
+    // /media/ paths → absolute VPS URL
+    if (url.startsWith('/media/')) return `${VPS_URL}${url}`;
+    // Other relative paths → absolute VPS URL
+    if (url.startsWith('/')) return `${VPS_URL}${url}`;
+    // WhatsApp CDN URLs → Vercel proxy (may still be encrypted)
+    return `/api/media?url=${encodeURIComponent(url)}&type=${type}`;
+  }
+
   function renderMessageContent(msg: Message) {
     const type = msg.message_type || 'text';
 
     if (type === 'image' && msg.media_url) {
       return (
         <div>
-          <img src={msg.media_url} alt="Imagem" className="rounded-lg max-w-full max-h-64 mb-1 cursor-pointer hover:opacity-90" onClick={() => window.open(msg.media_url!, '_blank')} />
+          <img src={mediaUrl(msg.media_url, "image")} alt="Imagem" className="rounded-lg max-w-full max-h-64 mb-1 cursor-pointer hover:opacity-90" onClick={() => window.open(mediaUrl(msg.media_url, 'image'), '_blank')} />
           {msg.content && msg.content !== '[image]' && <p className="whitespace-pre-wrap">{msg.content}</p>}
         </div>
       );
@@ -161,7 +179,7 @@ export default function Dashboard() {
     if (type === 'video' && msg.media_url) {
       return (
         <div>
-          <video src={msg.media_url} controls className="rounded-lg max-w-full max-h-64 mb-1" />
+          <video src={mediaUrl(msg.media_url, "video")} controls className="rounded-lg max-w-full max-h-64 mb-1" />
           {msg.content && msg.content !== '[video]' && <p className="whitespace-pre-wrap">{msg.content}</p>}
         </div>
       );
@@ -171,14 +189,14 @@ export default function Dashboard() {
       return (
         <div className="flex items-center gap-2 min-w-[200px]">
           <span className="text-lg">🎵</span>
-          <audio src={msg.media_url || undefined} controls className="flex-1 h-8" style={{ filter: 'invert(1) hue-rotate(180deg)' }} />
+          <audio src={mediaUrl(msg.media_url, "audio") || undefined} controls className="flex-1 h-8" style={{ filter: 'invert(1) hue-rotate(180deg)' }} />
         </div>
       );
     }
 
     if (type === 'document') {
       return (
-        <a href={msg.media_url || '#'} target="_blank" rel="noopener noreferrer"
+        <a href={mediaUrl(msg.media_url, 'document') || '#'} target="_blank" rel="noopener noreferrer"
            className="flex items-center gap-2 text-white hover:underline">
           <span className="text-2xl">📄</span>
           <div>
@@ -191,7 +209,7 @@ export default function Dashboard() {
 
     if (type === 'sticker') {
       return msg.media_url
-        ? <img src={msg.media_url} alt="Sticker" className="max-h-32" />
+        ? <img src={mediaUrl(msg.media_url, "sticker")} alt="Sticker" className="max-h-32" />
         : <p className="whitespace-pre-wrap">{msg.content}</p>;
     }
 
