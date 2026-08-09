@@ -34,8 +34,13 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [messageText, setMessageText] = useState('');
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
 
   useEffect(() => {
     loadConversations();
@@ -141,6 +146,81 @@ export default function Dashboard() {
     }
     setSending(false);
     if (fileInputRef.current) fileInputRef.current.value = '';
+  }
+
+  async function startRecording() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = async () => {
+        stream.getTracks().forEach(track => track.stop());
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm;codecs=opus' });
+        
+        // Convert to base64
+        const reader = new FileReader();
+        reader.onload = async () => {
+          const base64 = reader.result as string;
+          if (!selectedConversation) return;
+          
+          setSending(true);
+          try {
+            await fetch(`/api/send/media`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                number: selectedConversation.phone,
+                mediatype: 'audio',
+                mimetype: 'audio/ogg; codecs=opus',
+                media: base64,
+              })
+            });
+            setTimeout(() => loadMessages(selectedConversation), 1000);
+          } catch (err) {
+            console.error('Erro ao enviar áudio:', err);
+          }
+          setSending(false);
+        };
+        reader.readAsDataURL(audioBlob);
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+      setRecordingTime(0);
+
+      // Timer
+      recordingIntervalRef.current = setInterval(() => {
+        setRecordingTime(prev => prev + 1);
+      }, 1000);
+    } catch (err) {
+      console.error('Erro ao acessar microfone:', err);
+      alert('Não foi possível acessar o microfone. Verifique as permissões do navegador.');
+    }
+  }
+
+  function stopRecording() {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.stop();
+    }
+    if (recordingIntervalRef.current) {
+      clearInterval(recordingIntervalRef.current);
+    }
+    setIsRecording(false);
+    setRecordingTime(0);
+  }
+
+  function formatRecordingTime(seconds: number) {
+    const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+    const s = (seconds % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
   }
 
   function formatDate(dateStr: string) {
@@ -310,40 +390,69 @@ export default function Dashboard() {
 
                 {/* Input Area */}
                 <div className="border-t border-gray-800 p-4">
-                  <div className="flex items-center gap-3">
-                    <input
-                      type="file"
-                      ref={fileInputRef}
-                      onChange={sendFile}
-                      accept="image/*,audio/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"
-                      className="hidden"
-                    />
-                    <button
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={sending}
-                      className="bg-gray-700 hover:bg-gray-600 rounded-full p-3 transition disabled:opacity-50"
-                      title="Enviar arquivo"
-                    >
-                      📎
-                    </button>
-                    <input
-                      type="text"
-                      value={messageText}
-                      onChange={(e) => setMessageText(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage()}
-                      placeholder="Digite sua mensagem..."
-                      disabled={sending}
-                      className="flex-1 bg-gray-800 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500 disabled:opacity-50"
-                    />
-                    <button
-                      onClick={sendMessage}
-                      disabled={sending || !messageText.trim()}
-                      className="bg-green-600 hover:bg-green-500 rounded-full p-3 transition disabled:opacity-50"
-                      title="Enviar mensagem"
-                    >
-                      {sending ? '⏳' : '➤'}
-                    </button>
-                  </div>
+                  {isRecording ? (
+                    /* Recording UI */
+                    <div className="flex items-center gap-3">
+                      <div className="flex-1 flex items-center gap-3 bg-red-900/30 rounded-lg px-4 py-3">
+                        <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
+                        <span className="text-red-400 font-mono text-sm">{formatRecordingTime(recordingTime)}</span>
+                        <span className="text-gray-400 text-sm">Gravando áudio...</span>
+                      </div>
+                      <button
+                        onClick={stopRecording}
+                        className="bg-red-600 hover:bg-red-500 rounded-full p-3 transition"
+                        title="Parar gravação e enviar"
+                      >
+                        ⏹
+                      </button>
+                    </div>
+                  ) : (
+                    /* Normal Input */
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="file"
+                        ref={fileInputRef}
+                        onChange={sendFile}
+                        accept="image/*,audio/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"
+                        className="hidden"
+                      />
+                      <button
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={sending}
+                        className="bg-gray-700 hover:bg-gray-600 rounded-full p-3 transition disabled:opacity-50"
+                        title="Enviar arquivo"
+                      >
+                        📎
+                      </button>
+                      <button
+                        onClick={startRecording}
+                        disabled={sending}
+                        className={`rounded-full p-3 transition disabled:opacity-50 ${
+                          isRecording ? 'bg-red-600 hover:bg-red-500' : 'bg-gray-700 hover:bg-gray-600'
+                        }`}
+                        title="Gravar áudio"
+                      >
+                        🎤
+                      </button>
+                      <input
+                        type="text"
+                        value={messageText}
+                        onChange={(e) => setMessageText(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage()}
+                        placeholder="Digite sua mensagem..."
+                        disabled={sending}
+                        className="flex-1 bg-gray-800 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500 disabled:opacity-50"
+                      />
+                      <button
+                        onClick={sendMessage}
+                        disabled={sending || !messageText.trim()}
+                        className="bg-green-600 hover:bg-green-500 rounded-full p-3 transition disabled:opacity-50"
+                        title="Enviar mensagem"
+                      >
+                        {sending ? '⏳' : '➤'}
+                      </button>
+                    </div>
+                  )}
                 </div>
               </>
             ) : (
