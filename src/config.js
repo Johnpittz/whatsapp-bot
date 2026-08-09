@@ -17,7 +17,9 @@ export const env = {
   EVOLUTION_API_KEY: process.env.EVOLUTION_API_KEY,
   GEMINI_API_KEY: process.env.GEMINI_API_KEY,
   PORT: parseInt(process.env.PORT) || 3100,
-  INSTANCE_NAME: process.env.INSTANCE_NAME || 'minha-conexao'
+  INSTANCE_NAME: process.env.INSTANCE_NAME || 'minha-conexao',
+  SUPABASE_URL: process.env.SUPABASE_URL,
+  SUPABASE_KEY: process.env.SUPABASE_KEY
 };
 
 // Bot config (prompt, name, etc.)

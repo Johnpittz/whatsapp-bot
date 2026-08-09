@@ -1,16 +1,25 @@
 import axios from 'axios';
 import { env, getBotConfig } from './config.js';
+import { upsertConversation, saveMessage, updateLastMessage } from './database.js';
 
 const conversations = new Map();
 
 /**
- * Gera resposta usando Gemini AI
+ * Gera resposta usando Gemini AI e salva no Supabase
  */
 export async function generateReply(userId, message) {
   try {
     if (!conversations.has(userId)) conversations.set(userId, []);
     const history = conversations.get(userId);
     const botConfig = getBotConfig();
+
+    // Salvar mensagem recebida no Supabase
+    const phone = userId.replace('@s.whatsapp.net', '').replace('@lid', '');
+    const conversation = await upsertConversation(phone);
+    if (conversation) {
+      await saveMessage(conversation.id, 'incoming', message);
+      await updateLastMessage(phone, message);
+    }
 
     const contents = [];
     contents.push({ role: 'user', parts: [{ text: botConfig.prompt }] });
@@ -30,6 +39,12 @@ export async function generateReply(userId, message) {
 
     const reply = resp.data.candidates?.[0]?.content?.parts?.[0]?.text || 'Desculpe, nao consegui processar.';
 
+    // Salvar resposta no Supabase
+    if (conversation) {
+      await saveMessage(conversation.id, 'outgoing', reply);
+      await updateLastMessage(phone, reply);
+    }
+
     history.push({ role: 'user', text: message });
     history.push({ role: 'model', text: reply });
     if (history.length > 20) history.splice(0, history.length - 20);
@@ -42,7 +57,7 @@ export async function generateReply(userId, message) {
 }
 
 /**
- * Retorna todas as conversas ativas
+ * Retorna todas as conversas ativas (em memória)
  */
 export function getConversations() {
   const data = [];

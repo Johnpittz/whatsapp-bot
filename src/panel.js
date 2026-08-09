@@ -1,5 +1,6 @@
 import { isBotEnabled, toggleBot, getBotConfig, updateBotConfig, env } from './config.js';
-import { getConversations } from './chatbot.js';
+import { getConversations as getMemoryConversations } from './chatbot.js';
+import { getConversations, getMessages, searchConversations } from './database.js';
 
 /**
  * Retorna HTML do painel de controle
@@ -83,8 +84,46 @@ export function registerPanelRoutes(app) {
     res.json({ success: true });
   });
 
-  // Conversations
+  // Conversas em memória (bot)
   app.get('/api/conversations', (req, res) => {
-    res.json(getConversations());
+    res.json(getMemoryConversations());
+  });
+
+  // ======= ROTAS DO DASHBOARD (Supabase) =======
+
+  // Lista conversas do banco
+  app.get('/api/dashboard/conversations', async (req, res) => {
+    try {
+      const page = parseInt(req.query.page) || 1;
+      const limit = parseInt(req.query.limit) || 50;
+      const result = await getConversations(page, limit);
+      res.json(result);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Busca conversas
+  app.get('/api/dashboard/search', async (req, res) => {
+    try {
+      const query = req.query.q || '';
+      if (!query) return res.json([]);
+      const results = await searchConversations(query);
+      res.json(results);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Mensagens de uma conversa
+  app.get('/api/dashboard/messages/:conversationId', async (req, res) => {
+    try {
+      const page = parseInt(req.query.page) || 1;
+      const limit = parseInt(req.query.limit) || 50;
+      const messages = await getMessages(req.params.conversationId, page, limit);
+      res.json(messages);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
   });
 }
