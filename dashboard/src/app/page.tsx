@@ -1,7 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
+
+const BOT_URL = 'http://2.25.192.248:8080';
 
 interface Conversation {
   id: string;
@@ -18,6 +20,8 @@ interface Message {
   direction: 'incoming' | 'outgoing';
   content: string;
   message_type: string;
+  media_url: string | null;
+  file_name: string | null;
   created_at: string;
 }
 
@@ -27,17 +31,24 @@ export default function Dashboard() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
+  const [messageText, setMessageText] = useState('');
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     loadConversations();
-    // Auto-refresh a cada 30 segundos
-    const interval = setInterval(loadConversations, 30000);
+    const interval = setInterval(loadConversations, 15000);
     return () => clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
   async function loadConversations() {
     setLoading(true);
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from('conversations')
       .select('*')
       .order('last_message_at', { ascending: false });
@@ -48,7 +59,7 @@ export default function Dashboard() {
 
   async function loadMessages(conversation: Conversation) {
     setSelectedConversation(conversation);
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from('messages')
       .select('*')
       .eq('conversation_id', conversation.id)
@@ -62,7 +73,6 @@ export default function Dashboard() {
       loadConversations();
       return;
     }
-
     const { data } = await supabase
       .from('conversations')
       .select('*')
@@ -72,36 +82,162 @@ export default function Dashboard() {
     if (data) setConversations(data);
   }
 
+  async function sendMessage() {
+    if (!messageText.trim() || !selectedConversation) return;
+    setSending(true);
+    try {
+      await fetch(`${BOT_URL}/api/send/text`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          number: selectedConversation.phone,
+          text: messageText.trim()
+        })
+      });
+      setMessageText('');
+      setTimeout(() => loadMessages(selectedConversation), 1000);
+    } catch (err) {
+      console.error('Erro ao enviar:', err);
+    }
+    setSending(false);
+  }
+
+  async function sendFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !selectedConversation) return;
+
+    setSending(true);
+    try {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const base64 = reader.result as string;
+        const isAudio = file.type.startsWith('audio/');
+        const isVideo = file.type.startsWith('video/');
+        const isImage = file.type.startsWith('image/');
+
+        let mediatype = 'document';
+        if (isImage) mediatype = 'image';
+        else if (isAudio) mediatype = 'audio';
+        else if (isVideo) mediatype = 'video';
+
+        await fetch(`${BOT_URL}/api/send/media`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            number: selectedConversation.phone,
+            mediatype,
+            mimetype: file.type,
+            media: base64,
+            fileName: file.name,
+            caption: isImage || isVideo ? file.name : undefined
+          })
+        });
+        setTimeout(() => loadMessages(selectedConversation), 1000);
+      };
+      reader.readAsDataURL(file);
+    } catch (err) {
+      console.error('Erro ao enviar arquivo:', err);
+    }
+    setSending(false);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  }
+
   function formatDate(dateStr: string) {
     return new Date(dateStr).toLocaleString('pt-BR');
+  }
+
+  function renderMessageContent(msg: Message) {
+    const type = msg.message_type || 'text';
+
+    if (type === 'image' && msg.media_url) {
+      return (
+        <div>
+          <img src={msg.media_url} alt="Imagem" className="rounded-lg max-w-full max-h-64 mb-1 cursor-pointer hover:opacity-90" onClick={() => window.open(msg.media_url!, '_blank')} />
+          {msg.content && msg.content !== '[image]' && <p className="whitespace-pre-wrap">{msg.content}</p>}
+        </div>
+      );
+    }
+
+    if (type === 'video' && msg.media_url) {
+      return (
+        <div>
+          <video src={msg.media_url} controls className="rounded-lg max-w-full max-h-64 mb-1" />
+          {msg.content && msg.content !== '[video]' && <p className="whitespace-pre-wrap">{msg.content}</p>}
+        </div>
+      );
+    }
+
+    if (type === 'audio') {
+      return (
+        <div className="flex items-center gap-2 min-w-[200px]">
+          <span className="text-lg">🎵</span>
+          <audio src={msg.media_url || undefined} controls className="flex-1 h-8" style={{ filter: 'invert(1) hue-rotate(180deg)' }} />
+        </div>
+      );
+    }
+
+    if (type === 'document') {
+      return (
+        <a href={msg.media_url || '#'} target="_blank" rel="noopener noreferrer"
+           className="flex items-center gap-2 text-white hover:underline">
+          <span className="text-2xl">📄</span>
+          <div>
+            <p className="font-medium">{msg.file_name || 'Documento'}</p>
+            <p className="text-xs opacity-60">Clique para baixar</p>
+          </div>
+        </a>
+      );
+    }
+
+    if (type === 'sticker') {
+      return msg.media_url
+        ? <img src={msg.media_url} alt="Sticker" className="max-h-32" />
+        : <p className="whitespace-pre-wrap">{msg.content}</p>;
+    }
+
+    if (type === 'location') {
+      return (
+        <div className="flex items-center gap-2">
+          <span className="text-lg">📍</span>
+          <p>{msg.content}</p>
+        </div>
+      );
+    }
+
+    if (type === 'contact') {
+      return (
+        <div className="flex items-center gap-2">
+          <span className="text-lg">👤</span>
+          <p>{msg.content}</p>
+        </div>
+      );
+    }
+
+    return <p className="whitespace-pre-wrap">{msg.content}</p>;
   }
 
   return (
     <div className="min-h-screen bg-gray-950 text-white">
       <div className="max-w-7xl mx-auto p-4">
         {/* Header */}
-        <div className="mb-8">
+        <div className="mb-6">
           <h1 className="text-3xl font-bold mb-2">💬 Dashboard de Conversas</h1>
-          <p className="text-gray-400">Histórico completo de atendimentos via WhatsApp</p>
+          <p className="text-gray-400">Envie e receba mensagens, áudios, imagens e documentos</p>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6" style={{ height: 'calc(100vh - 140px)' }}>
           {/* Lista de Conversas */}
-          <div className="lg:col-span-1 bg-gray-900 rounded-xl p-4">
+          <div className="lg:col-span-1 bg-gray-900 rounded-xl p-4 flex flex-col">
             <div className="mb-4">
               <input
                 type="text"
                 placeholder="🔍 Buscar por telefone ou nome..."
                 value={searchQuery}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  searchConversations();
-                }}
+                onChange={(e) => { setSearchQuery(e.target.value); searchConversations(); }}
                 className="w-full bg-gray-800 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500"
               />
             </div>
-
-            <div className="space-y-2 max-h-[600px] overflow-y-auto">
+            <div className="space-y-2 flex-1 overflow-y-auto">
               {loading ? (
                 <p className="text-gray-500 text-center py-8">Carregando...</p>
               ) : conversations.length === 0 ? (
@@ -114,24 +250,18 @@ export default function Dashboard() {
                     className={`w-full text-left p-4 rounded-lg transition ${
                       selectedConversation?.id === conv.id
                         ? 'bg-green-600'
-                        : 'bg-gray-800 hover:bg-gray-750'
+                        : 'bg-gray-800 hover:bg-gray-700'
                     }`}
                   >
                     <div className="flex justify-between items-start">
                       <div>
                         <p className="font-semibold">{conv.phone}</p>
-                        {conv.contact_name && (
-                          <p className="text-sm text-gray-400">{conv.contact_name}</p>
-                        )}
+                        {conv.contact_name && <p className="text-sm text-gray-400">{conv.contact_name}</p>}
                       </div>
-                      <span className="text-xs text-gray-500">
-                        {formatDate(conv.last_message_at)}
-                      </span>
+                      <span className="text-xs text-gray-500">{formatDate(conv.last_message_at)}</span>
                     </div>
                     {conv.last_message && (
-                      <p className="text-sm text-gray-400 mt-1 truncate">
-                        {conv.last_message}
-                      </p>
+                      <p className="text-sm text-gray-400 mt-1 truncate">{conv.last_message}</p>
                     )}
                   </button>
                 ))
@@ -139,41 +269,75 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Mensagens */}
-          <div className="lg:col-span-2 bg-gray-900 rounded-xl p-4">
+          {/* Chat Area */}
+          <div className="lg:col-span-2 bg-gray-900 rounded-xl flex flex-col">
             {selectedConversation ? (
               <>
-                <div className="border-b border-gray-800 pb-4 mb-4">
+                {/* Chat Header */}
+                <div className="border-b border-gray-800 p-4">
                   <h2 className="text-xl font-bold">{selectedConversation.phone}</h2>
                   {selectedConversation.contact_name && (
                     <p className="text-gray-400">{selectedConversation.contact_name}</p>
                   )}
                 </div>
 
-                <div className="space-y-4 max-h-[500px] overflow-y-auto">
+                {/* Messages */}
+                <div className="flex-1 overflow-y-auto p-4 space-y-3" style={{ maxHeight: 'calc(100vh - 320px)' }}>
                   {messages.map((msg) => (
-                    <div
-                      key={msg.id}
-                      className={`flex ${msg.direction === 'outgoing' ? 'justify-end' : 'justify-start'}`}
-                    >
-                      <div
-                        className={`max-w-[70%] rounded-lg px-4 py-2 ${
-                          msg.direction === 'outgoing'
-                            ? 'bg-green-600 text-white'
-                            : 'bg-gray-800 text-gray-200'
-                        }`}
-                      >
-                        <p className="whitespace-pre-wrap">{msg.content}</p>
-                        <p className="text-xs opacity-60 mt-1">
-                          {formatDate(msg.created_at)}
-                        </p>
+                    <div key={msg.id} className={`flex ${msg.direction === 'outgoing' ? 'justify-end' : 'justify-start'}`}>
+                      <div className={`max-w-[75%] rounded-lg px-4 py-2 ${
+                        msg.direction === 'outgoing'
+                          ? 'bg-green-600 text-white'
+                          : 'bg-gray-800 text-gray-200'
+                      }`}>
+                        {renderMessageContent(msg)}
+                        <p className="text-xs opacity-50 mt-1">{formatDate(msg.created_at)}</p>
                       </div>
                     </div>
                   ))}
+                  <div ref={messagesEndRef} />
+                </div>
+
+                {/* Input Area */}
+                <div className="border-t border-gray-800 p-4">
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={sendFile}
+                      accept="image/*,audio/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"
+                      className="hidden"
+                    />
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={sending}
+                      className="bg-gray-700 hover:bg-gray-600 rounded-full p-3 transition disabled:opacity-50"
+                      title="Enviar arquivo"
+                    >
+                      📎
+                    </button>
+                    <input
+                      type="text"
+                      value={messageText}
+                      onChange={(e) => setMessageText(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage()}
+                      placeholder="Digite sua mensagem..."
+                      disabled={sending}
+                      className="flex-1 bg-gray-800 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500 disabled:opacity-50"
+                    />
+                    <button
+                      onClick={sendMessage}
+                      disabled={sending || !messageText.trim()}
+                      className="bg-green-600 hover:bg-green-500 rounded-full p-3 transition disabled:opacity-50"
+                      title="Enviar mensagem"
+                    >
+                      {sending ? '⏳' : '➤'}
+                    </button>
+                  </div>
                 </div>
               </>
             ) : (
-              <div className="flex items-center justify-center h-[500px] text-gray-500">
+              <div className="flex items-center justify-center h-full text-gray-500">
                 <p>Selecione uma conversa para ver as mensagens</p>
               </div>
             )}
@@ -181,7 +345,7 @@ export default function Dashboard() {
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-8">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
           <div className="bg-gray-900 rounded-xl p-4 text-center">
             <p className="text-3xl font-bold text-green-500">{conversations.length}</p>
             <p className="text-gray-400 text-sm">Conversas</p>
