@@ -38,7 +38,13 @@ export async function getConnectionState(instanceName) {
 /**
  * Configura webhook na instância
  */
-export async function setWebhook(instanceName, webhookUrl, events = ['MESSAGES_UPSERT']) {
+export async function setWebhook(instanceName, webhookUrl, events = [
+  'MESSAGES_UPSERT',
+  'MESSAGES_UPDATE',
+  'SEND_MESSAGE',
+  'CONNECTION_UPDATE',
+  'PRESENCE_UPDATE'
+]) {
   const resp = await axios.post(
     env.EVOLUTION_API_URL + '/webhook/set/' + instanceName,
     {
