@@ -168,7 +168,9 @@ export default function Dashboard() {
         // Convert to base64
         const reader = new FileReader();
         reader.onload = async () => {
-          const base64 = reader.result as string;
+          const dataUrl = reader.result as string;
+          // Strip data URL prefix: "data:audio/webm;codecs=opus;base64," → just base64
+          const base64 = dataUrl.split(',')[1] || dataUrl;
           if (!selectedConversation) return;
           
           setSending(true);
