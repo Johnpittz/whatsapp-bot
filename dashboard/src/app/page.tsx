@@ -147,20 +147,12 @@ export default function Dashboard() {
     return new Date(dateStr).toLocaleString('pt-BR');
   }
 
-  // VPS base URL for media files
-  const VPS_URL = 'http://2.25.192.248:8080';
-  
-  // Proxy WhatsApp media URLs through Vercel to avoid CORS/expiration issues
-  // /media/ paths → absolute VPS URLs; CDN URLs → Vercel proxy
+  // All media goes through Vercel proxy (avoids Mixed Content HTTPS→HTTP)
   function mediaUrl(url: string | null, type: string = 'image') {
     if (!url) return '';
     // data URLs pass through directly
     if (url.startsWith('data:')) return url;
-    // /media/ paths → absolute VPS URL
-    if (url.startsWith('/media/')) return `${VPS_URL}${url}`;
-    // Other relative paths → absolute VPS URL
-    if (url.startsWith('/')) return `${VPS_URL}${url}`;
-    // WhatsApp CDN URLs → Vercel proxy (may still be encrypted)
+    // Everything else goes through the Vercel API proxy
     return `/api/media?url=${encodeURIComponent(url)}&type=${type}`;
   }
 

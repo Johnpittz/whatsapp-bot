@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+const VPS_HOST = 'http://2.25.192.248:8080';
+
 export async function GET(request: NextRequest) {
   const url = request.nextUrl.searchParams.get('url');
   const type = request.nextUrl.searchParams.get('type') || 'image';
@@ -9,12 +11,23 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const parsedUrl = new URL(url);
-    if (!parsedUrl.hostname.endsWith('whatsapp.net') && !parsedUrl.hostname.endsWith('whatsapp.com')) {
+    let fetchUrl = url;
+
+    // Local /media/ paths → proxy through VPS
+    if (url.startsWith('/media/')) {
+      fetchUrl = `${VPS_HOST}${url}`;
+    }
+
+    // Validate: must be WhatsApp CDN or VPS
+    const parsedUrl = new URL(fetchUrl);
+    const isWhatsApp = parsedUrl.hostname.endsWith('whatsapp.net') || parsedUrl.hostname.endsWith('whatsapp.com');
+    const isVPS = parsedUrl.hostname === '2.25.192.248';
+
+    if (!isWhatsApp && !isVPS) {
       return NextResponse.json({ error: 'Invalid URL domain' }, { status: 403 });
     }
 
-    const resp = await fetch(url, {
+    const resp = await fetch(fetchUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0',
         'Accept': '*/*',
@@ -37,14 +50,14 @@ export async function GET(request: NextRequest) {
       document: 'application/pdf',
     };
 
-    // Try to detect from magic bytes first
+    // Detect from magic bytes
     let mime = mimeMap[type] || 'application/octet-stream';
 
     if (bytes[0] === 0xFF && bytes[1] === 0xD8 && bytes[2] === 0xFF) mime = 'image/jpeg';
     else if (bytes[0] === 0x89 && bytes[1] === 0x50) mime = 'image/png';
     else if (bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[8] === 0x57) mime = 'image/webp';
     else if (bytes[0] === 0x4F && bytes[1] === 0x67) mime = 'audio/ogg';
-    else if (bytes[0] === 0x1A && bytes[1] === 0x45) mime = 'video/webm';
+    else if (bytes[0] === 0x1A && bytes[1] === 0xE3) mime = 'video/mp4';
 
     return new NextResponse(buffer, {
       status: 200,
