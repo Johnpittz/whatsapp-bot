@@ -347,8 +347,8 @@ export default function Dashboard() {
                   >
                     <div className="flex justify-between items-start">
                       <div>
-                        <p className="font-semibold">{conv.phone}</p>
-                        {conv.contact_name && <p className="text-sm text-gray-400">{conv.contact_name}</p>}
+                        <p className="font-semibold">{conv.contact_name || conv.phone}</p>
+                        {conv.contact_name && <p className="text-sm text-gray-400">{conv.phone}</p>}
                       </div>
                       <span className="text-xs text-gray-500">{formatDate(conv.last_message_at)}</span>
                     </div>
@@ -367,9 +367,9 @@ export default function Dashboard() {
               <>
                 {/* Chat Header */}
                 <div className="border-b border-gray-800 p-4">
-                  <h2 className="text-xl font-bold">{selectedConversation.phone}</h2>
+                  <h2 className="text-xl font-bold">{selectedConversation.contact_name || selectedConversation.phone}</h2>
                   {selectedConversation.contact_name && (
-                    <p className="text-gray-400">{selectedConversation.contact_name}</p>
+                    <p className="text-gray-400">{selectedConversation.phone}</p>
                   )}
                 </div>
 
