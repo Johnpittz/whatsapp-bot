@@ -6,6 +6,7 @@ import { sendWhatsApp } from './evolutionapi.js';
 import { generateReply } from './chatbot.js';
 import { registerPanelRoutes } from './panel.js';
 import { registerSendRoutes, getLastSentMediaUrl } from './send.js';
+import { registerBulkRoutes } from './bulk-routes.js';
 import { createClient } from '@supabase/supabase-js';
 
 const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_KEY);
@@ -36,12 +37,13 @@ function extFromMime(mime) {
 
 // ======= SUPABASE HELPERS =======
 async function upsertConversation(phone, contactName = null, lastMessage = null) {
+  // Only update contact_name if we have a non-null value (don't overwrite existing names)
+  const updateData = { phone, last_message: lastMessage, last_message_at: new Date().toISOString() };
+  if (contactName) updateData.contact_name = contactName;
+  
   const { data, error } = await supabase
     .from('conversations')
-    .upsert(
-      { phone, contact_name: contactName, last_message: lastMessage, last_message_at: new Date().toISOString() },
-      { onConflict: 'phone' }
-    )
+    .upsert(updateData, { onConflict: 'phone' })
     .select()
     .single();
   if (error) console.error('Erro upsert conversation:', error.message);
@@ -77,6 +79,7 @@ app.post('/webhook', async (req, res) => {
     if (event === 'messages.upsert') {
       const msg = data;
       const from = msg.key?.remoteJid;
+      const pushName = msg.pushName || null; // Contact name from WhatsApp
       const text = msg.message?.conversation ||
                    msg.message?.extendedTextMessage?.text ||
                    msg.message?.imageMessage?.caption ||
@@ -152,7 +155,7 @@ app.post('/webhook', async (req, res) => {
       // Sempre salvar no Supabase (independente do status do bot)
       try {
         const displayText = text || `[${msgType}]`;
-        const conv = await upsertConversation(phone, null, displayText);
+        const conv = await upsertConversation(phone, pushName, displayText);
         if (conv) {
           await insertMessage(conv.id, isFromMe ? 'outgoing' : 'incoming', displayText, msgType, mediaUrl, fileName);
           console.log(`Mensagem salva: ${isFromMe ? 'enviada' : 'recebida'} de ${phone} (${msgType})${mediaUrl ? ' [media]' : ''}`);
@@ -274,6 +277,9 @@ registerPanelRoutes(app);
 
 // ======= SEND ROUTES =======
 registerSendRoutes(app);
+
+// ======= BULK ROUTES =======
+registerBulkRoutes(app);
 
 // ======= START =======
 app.listen(env.PORT, '0.0.0.0', () => {

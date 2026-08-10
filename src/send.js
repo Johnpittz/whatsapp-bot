@@ -93,6 +93,46 @@ async function convertAudioToOgg(base64Data, fromMimetype) {
 }
 
 /**
+ * Send a text message directly (for bulk module)
+ */
+export async function sendTextMessage(number, text) {
+  const resp = await axios.post(
+    `${EVOLUTION_API_URL}/message/sendText/${INSTANCE_NAME}`,
+    { number, text: text.slice(0, 4096) },
+    { headers: getHeaders() }
+  );
+  return resp.data;
+}
+
+/**
+ * Send a media message directly (for bulk module)
+ */
+export async function sendMediaMessage(number, caption, mediatype, mediaUrl) {
+  // For local media files, read from disk
+  let media = mediaUrl;
+  if (mediaUrl.startsWith('/media/')) {
+    const filePath = path.join('/opt/whatsapp-bot/media', mediaUrl.replace('/media/', ''));
+    const buffer = fs.readFileSync(filePath);
+    media = buffer.toString('base64');
+  }
+
+  const payload = {
+    number,
+    mediatype: mediatype || 'image',
+    mimetype: 'application/octet-stream',
+    media,
+  };
+  if (caption) payload.caption = caption;
+
+  const resp = await axios.post(
+    `${EVOLUTION_API_URL}/message/sendMedia/${INSTANCE_NAME}`,
+    payload,
+    { headers: getHeaders() }
+  );
+  return resp.data;
+}
+
+/**
  * Register send routes on the Express app
  *
  * POST /api/send/text   – Send a text message
