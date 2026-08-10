@@ -45,10 +45,17 @@ export function registerBulkRoutes(app) {
         return res.status(400).json({ error: 'Mensagem é obrigatória' });
       }
 
-      // Clean numbers
+      // Clean numbers and ensure country code
       const cleanNumbers = numbers
         .map(n => String(n).replace(/\D/g, ''))
-        .filter(n => n.length >= 10);
+        .filter(n => n.length >= 10)
+        .map(n => {
+          // Add Brazil country code (55) if missing
+          if (n.length <= 11 && !n.startsWith('55')) {
+            return '55' + n;
+          }
+          return n;
+        });
 
       if (cleanNumbers.length === 0) {
         return res.status(400).json({ error: 'Nenhum número válido encontrado' });
