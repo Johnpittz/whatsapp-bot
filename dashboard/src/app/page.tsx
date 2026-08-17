@@ -88,7 +88,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     loadConversations();
-    const interval = setInterval(loadConversations, 15000);
+    const interval = setInterval(loadConversations, 8000);
     return () => clearInterval(interval);
   }, [loadConversations]);
 
@@ -141,7 +141,7 @@ export default function Dashboard() {
 
       if (resp.ok) {
         setMessageText('');
-        await loadMessages(selectedConversation);
+        await Promise.all([loadMessages(selectedConversation), loadConversations()]);
         setTimeout(scrollToBottom, 100);
       }
     } catch (err) {
@@ -181,7 +181,7 @@ export default function Dashboard() {
         });
 
         if (resp.ok) {
-          await loadMessages(selectedConversation);
+          await Promise.all([loadMessages(selectedConversation), loadConversations()]);
           setTimeout(scrollToBottom, 100);
         }
         setSending(false);
@@ -224,7 +224,7 @@ export default function Dashboard() {
                   media: base64,
                 }),
               });
-              await loadMessages(selectedConversation);
+              await Promise.all([loadMessages(selectedConversation), loadConversations()]);
               setTimeout(scrollToBottom, 100);
             } catch (err) {
               console.error('Erro ao enviar áudio:', err);
