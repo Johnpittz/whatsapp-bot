@@ -260,8 +260,8 @@ export default function Dashboard() {
   }
 
   // All media goes through Vercel proxy (avoids Mixed Content HTTPS→HTTP)
-  function mediaUrl(url: string | null, type: string = 'image') {
-    if (!url) return null;
+  function mediaUrl(url: string | null, type: string = 'image'): string {
+    if (!url) return '';
     // Already a proxy URL or blob
     if (url.startsWith('/api/') || url.startsWith('blob:')) return url;
     // Everything else goes through the Vercel API proxy
