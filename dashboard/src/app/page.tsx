@@ -92,9 +92,12 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, [loadConversations]);
 
-  // Only scroll to bottom when user sends a message or loads a new conversation
+  // Scroll the messages container WITHOUT scrolling the page
   const scrollToBottom = useCallback(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const container = messagesContainerRef.current;
+    if (container) {
+      container.scrollTop = container.scrollHeight;
+    }
   }, []);
 
   async function loadMessages(conversation: Conversation) {
@@ -106,7 +109,6 @@ export default function Dashboard() {
       .order('created_at', { ascending: true });
 
     if (data) setMessages(data);
-    // Scroll to bottom when opening a new conversation
     setTimeout(scrollToBottom, 100);
   }
 
@@ -139,9 +141,8 @@ export default function Dashboard() {
 
       if (resp.ok) {
         setMessageText('');
-        // Reload messages and scroll to bottom
         await loadMessages(selectedConversation);
-        scrollToBottom();
+        setTimeout(scrollToBottom, 100);
       }
     } catch (err) {
       console.error('Erro ao enviar:', err);
@@ -153,7 +154,6 @@ export default function Dashboard() {
   async function sendFile() {
     const file = fileInputRef.current?.files?.[0];
     if (!file || !selectedConversation) return;
-
     setSending(true);
     try {
       const reader = new FileReader();
@@ -182,7 +182,7 @@ export default function Dashboard() {
 
         if (resp.ok) {
           await loadMessages(selectedConversation);
-          scrollToBottom();
+          setTimeout(scrollToBottom, 100);
         }
         setSending(false);
       };
@@ -225,7 +225,7 @@ export default function Dashboard() {
                 }),
               });
               await loadMessages(selectedConversation);
-              scrollToBottom();
+              setTimeout(scrollToBottom, 100);
             } catch (err) {
               console.error('Erro ao enviar áudio:', err);
             }
@@ -262,9 +262,7 @@ export default function Dashboard() {
   // All media goes through Vercel proxy (avoids Mixed Content HTTPS→HTTP)
   function mediaUrl(url: string | null, type: string = 'image'): string {
     if (!url) return '';
-    // Already a proxy URL or blob
     if (url.startsWith('/api/') || url.startsWith('blob:')) return url;
-    // Everything else goes through the Vercel API proxy
     return `/api/media?url=${encodeURIComponent(url)}&type=${type}`;
   }
 
@@ -338,9 +336,9 @@ export default function Dashboard() {
     if (type === 'sticker') {
       return (
         <div key={msg.id} className={`flex ${isOutgoing ? 'justify-end' : 'justify-start'} mb-2`}>
-          return msg.media_url
+          {msg.media_url
             ? <img src={mediaUrl(msg.media_url, "sticker")} alt="Sticker" className="max-h-32" />
-            : null
+            : null}
         </div>
       );
     }
@@ -357,36 +355,57 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white">
-      <div className="max-w-7xl mx-auto p-4">
+    <div className="h-screen flex flex-col bg-gray-950 text-white overflow-hidden">
+      <div className="flex-1 flex flex-col max-w-7xl w-full mx-auto p-4 min-h-0">
         {/* Header */}
-        <div className="mb-6 flex items-center justify-between">
+        <div className="mb-4 flex items-center justify-between shrink-0">
           <div>
-            <h1 className="text-3xl font-bold mb-2">💬 Dashboard de Conversas</h1>
-            <p className="text-gray-400">Envie e receba mensagens, áudios, imagens e documentos</p>
+            <h1 className="text-3xl font-bold mb-1">💬 Dashboard de Conversas</h1>
+            <p className="text-gray-400 text-sm">Envie e receba mensagens, áudios, imagens e documentos</p>
           </div>
           <a href="/bulk" className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg font-medium transition">
             📨 Disparo em Massa
           </a>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6" style={{ height: 'calc(100vh - 180px)' }}>
+        {/* Stats */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4 shrink-0">
+          <div className="bg-gray-900 rounded-xl p-3 text-center">
+            <p className="text-2xl font-bold text-green-500">{globalStats.totalConversations}</p>
+            <p className="text-gray-400 text-xs">Conversas</p>
+          </div>
+          <div className="bg-gray-900 rounded-xl p-3 text-center">
+            <p className="text-2xl font-bold text-blue-500">{globalStats.totalMessages}</p>
+            <p className="text-gray-400 text-xs">Mensagens</p>
+          </div>
+          <div className="bg-gray-900 rounded-xl p-3 text-center">
+            <p className="text-2xl font-bold text-purple-500">{globalStats.totalIncoming}</p>
+            <p className="text-gray-400 text-xs">Recebidas</p>
+          </div>
+          <div className="bg-gray-900 rounded-xl p-3 text-center">
+            <p className="text-2xl font-bold text-yellow-500">{globalStats.totalOutgoing}</p>
+            <p className="text-gray-400 text-xs">Enviadas</p>
+          </div>
+        </div>
+
+        {/* Main Content: Conversas + Chat */}
+        <div className="flex-1 flex gap-4 min-h-0">
           {/* Lista de Conversas */}
-          <div className="lg:col-span-1 bg-gray-900 rounded-xl p-4 flex flex-col">
-            <div className="mb-4">
+          <div className="w-80 shrink-0 bg-gray-900 rounded-xl p-4 flex flex-col min-h-0">
+            <div className="mb-3 shrink-0">
               <input
                 type="text"
                 placeholder="🔍 Buscar por telefone ou nome..."
                 value={searchQuery}
                 onChange={e => { setSearchQuery(e.target.value); searchConversations(); }}
-                className="w-full bg-gray-800 rounded-lg px-4 py-2 text-white placeholder-gray-500 border border-gray-700 focus:border-blue-500 focus:outline-none"
+                className="w-full bg-gray-800 rounded-lg px-4 py-2 text-sm text-white placeholder-gray-500 border border-gray-700 focus:border-blue-500 focus:outline-none"
               />
             </div>
-            <div className="flex-1 overflow-y-auto space-y-2">
+            <div className="flex-1 overflow-y-auto space-y-2 min-h-0">
               {loading ? (
-                <p className="text-gray-400 text-center py-4">Carregando...</p>
+                <p className="text-gray-400 text-center py-4 text-sm">Carregando...</p>
               ) : conversations.length === 0 ? (
-                <p className="text-gray-400 text-center py-4">Nenhuma conversa encontrada</p>
+                <p className="text-gray-400 text-center py-4 text-sm">Nenhuma conversa encontrada</p>
               ) : (
                 conversations.map(conv => (
                   <button
@@ -399,14 +418,14 @@ export default function Dashboard() {
                     }`}
                   >
                     <div className="flex justify-between items-start">
-                      <div>
-                        <p className="font-semibold">{conv.contact_name || conv.phone}</p>
-                        {conv.contact_name && <p className="text-sm text-gray-400">{conv.phone}</p>}
+                      <div className="min-w-0 flex-1">
+                        <p className="font-semibold text-sm truncate">{conv.contact_name || conv.phone}</p>
+                        {conv.contact_name && <p className="text-xs text-gray-400 truncate">{conv.phone}</p>}
                       </div>
-                      <span className="text-xs text-gray-500">{formatDate(conv.last_message_at)}</span>
+                      <span className="text-xs text-gray-500 shrink-0 ml-2">{formatDate(conv.last_message_at)}</span>
                     </div>
                     {conv.last_message && (
-                      <p className="text-sm text-gray-400 mt-1 truncate">{conv.last_message}</p>
+                      <p className="text-xs text-gray-400 mt-1 truncate">{conv.last_message}</p>
                     )}
                   </button>
                 ))
@@ -415,25 +434,25 @@ export default function Dashboard() {
           </div>
 
           {/* Chat Area */}
-          <div className="lg:col-span-2 bg-gray-900 rounded-xl flex flex-col">
+          <div className="flex-1 bg-gray-900 rounded-xl flex flex-col min-h-0 min-w-0">
             {selectedConversation ? (
               <>
                 {/* Chat Header */}
-                <div className="border-b border-gray-800 p-4">
+                <div className="border-b border-gray-800 p-4 shrink-0">
                   <h2 className="text-xl font-bold">{selectedConversation.contact_name || selectedConversation.phone}</h2>
                   {selectedConversation.contact_name && (
-                    <p className="text-gray-400">{selectedConversation.phone}</p>
+                    <p className="text-gray-400 text-sm">{selectedConversation.phone}</p>
                   )}
                 </div>
 
-                {/* Messages */}
-                <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4">
+                {/* Messages - THIS is the scrollable container */}
+                <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 min-h-0">
                   {messages.map(msg => renderMessage(msg))}
                   <div ref={messagesEndRef} />
                 </div>
 
                 {/* Input Area */}
-                <div className="border-t border-gray-800 p-4">
+                <div className="border-t border-gray-800 p-4 shrink-0">
                   <div className="flex items-center gap-2">
                     <input
                       type="file"
@@ -496,26 +515,6 @@ export default function Dashboard() {
                 <p>Selecione uma conversa para ver as mensagens</p>
               </div>
             )}
-          </div>
-        </div>
-
-        {/* Stats - using global counts, not per-conversation */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
-          <div className="bg-gray-900 rounded-xl p-4 text-center">
-            <p className="text-3xl font-bold text-green-500">{globalStats.totalConversations}</p>
-            <p className="text-gray-400 text-sm">Conversas</p>
-          </div>
-          <div className="bg-gray-900 rounded-xl p-4 text-center">
-            <p className="text-3xl font-bold text-blue-500">{globalStats.totalMessages}</p>
-            <p className="text-gray-400 text-sm">Mensagens</p>
-          </div>
-          <div className="bg-gray-900 rounded-xl p-4 text-center">
-            <p className="text-3xl font-bold text-purple-500">{globalStats.totalIncoming}</p>
-            <p className="text-gray-400 text-sm">Recebidas</p>
-          </div>
-          <div className="bg-gray-900 rounded-xl p-4 text-center">
-            <p className="text-3xl font-bold text-yellow-500">{globalStats.totalOutgoing}</p>
-            <p className="text-gray-400 text-sm">Enviadas</p>
           </div>
         </div>
       </div>
