@@ -92,6 +92,33 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, [loadConversations]);
 
+  // Poll messages for the currently open conversation
+  const messagesCountRef = useRef(0);
+  useEffect(() => {
+    if (!selectedConversation) return;
+
+    async function refreshMessages() {
+      const { data } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('conversation_id', selectedConversation!.id)
+        .order('created_at', { ascending: true });
+
+      if (data) {
+        setMessages(data);
+        // Auto-scroll only if new messages arrived
+        if (data.length > messagesCountRef.current) {
+          messagesCountRef.current = data.length;
+          setTimeout(scrollToBottom, 100);
+        }
+      }
+    }
+
+    messagesCountRef.current = messages.length;
+    const interval = setInterval(refreshMessages, 8000);
+    return () => clearInterval(interval);
+  }, [selectedConversation?.id]);
+
   // Scroll the messages container WITHOUT scrolling the page
   const scrollToBottom = useCallback(() => {
     const container = messagesContainerRef.current;
